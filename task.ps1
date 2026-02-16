@@ -1,6 +1,7 @@
 $location = "southafricanorth"
 $location = "uksouth"
 $resourceGroupName = "mate-azure-task-13"
+$vmName = "matebox"
 $vmSize = "Standard_B1s"
 $networkSecurityGroupName = "defaultnsg"
 $virtualNetworkName = "vnet"
@@ -56,24 +57,22 @@ $Params = @{
 }
 Set-AzVMExtension @Params
 
-Write-Host "Installing Azure Monitor Agent..."
-Set-AzVMExtension -ResourceGroupName $resourceGroupName `
-    -VMName $vmName `
-    -Name "AzureMonitorLinuxAgent" `
-    -Publisher "Microsoft.Azure.Monitor" `
-    -ExtensionType "AzureMonitorLinuxAgent" `
-    -TypeHandlerVersion "1.25" `
-    -Location $location
-Write-Host "Creating Data Collection Rule..."
-$dcrName = "mate-dcr"
-$dcr = New-AzDataCollectionRule -Location $location -ResourceGroupName $resourceGroupName -Name $dcrName -Platform Linux -DataCollectionEndpointId $null
+Write-Host "Creating Data Collection Rule structure..."
 
-Write-Host "Creating DCR Association..."
-$vmParams = @{
-    Name = $vmName
-    ResourceGroupName = $resourceGroupName
+$dest = New-AzDataCollectionRuleDestinationObject -AzureMonitorMetric @{Name="azureMonitorMetrics"}
+
+$perfCounters = @("\\Processor(_Total)\\% Processor Time", "\\Memory\\Available MBytes", "\\LogicalDisk(_Total)\\% Free Space")
+$source = New-AzDataCollectionRuleDataSourceObject -PerformanceCounter @{
+    Name="LinuxCounters"
+    Streams="Microsoft-InsightsMetrics"
+    SamplingFrequencyInSeconds=60
+    CounterSpecifiers=$perfCounters
 }
-$vm = Get-AzVM @vmParams
-$dcrId = $dcr.Id
-$associationName = "mate-dcr-association"
-New-AzDataCollectionRuleAssociation -TargetResourceId $vm.Id -DataCollectionRuleId $dcrId -Name $associationName
+
+$flow = New-AzDataCollectionRuleDataFlowObject -Destinations "azureMonitorMetrics" -Streams "Microsoft-InsightsMetrics"
+
+New-AzDataCollectionRule -Location $location -ResourceGroupName $resourceGroupName -Name "mate-dcr" -DataSources $source -Destinations $dest -DataFlows $flow
+
+Write-Host "Associating DCR with VM..."
+$vm = Get-AzVM -ResourceGroupName $resourceGroupName -Name $vmName
+New-AzDataCollectionRuleAssociation -TargetResourceId $vm.Id -DataCollectionRuleId "/subscriptions/$(Get-AzContext | Select-Object -ExpandProperty Subscription | Select-Object -ExpandProperty Id)/resourceGroups/$resourceGroupName/providers/Microsoft.Insights/dataCollectionRules/mate-dcr" -Name "mate-dcr-association"
