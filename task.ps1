@@ -1,7 +1,7 @@
-$location = "southafricanorth"   # Південна Африка
-$resourceGroupName = "mate-azure-task-13-SA"
-$vmName = "matebox"
-$vmSize = "Standard_B2ats_v2"    # ARM архітектура (Ampere Altra)
+$location = "southafricanorth"
+$location = "uksouth"
+$resourceGroupName = "mate-azure-task-13"
+$vmSize = "Standard_B1s"
 $networkSecurityGroupName = "defaultnsg"
 $virtualNetworkName = "vnet"
 $subnetName = "default"
@@ -31,7 +31,6 @@ if (!(Get-AzSshKey -ResourceGroupName $resourceGroupName -Name $sshKeyName -Erro
 }
 
 Write-Host "Creating VM ($vmSize - ARM64)..."
-# Ubuntu2204 автоматично підбере ARM-версію образу під цей розмір
 New-AzVm `
 -ResourceGroupName $resourceGroupName `
 -Name $vmName `
@@ -65,3 +64,16 @@ Set-AzVMExtension -ResourceGroupName $resourceGroupName `
     -ExtensionType "AzureMonitorLinuxAgent" `
     -TypeHandlerVersion "1.25" `
     -Location $location
+Write-Host "Creating Data Collection Rule..."
+$dcrName = "mate-dcr"
+$dcr = New-AzDataCollectionRule -Location $location -ResourceGroupName $resourceGroupName -Name $dcrName -Platform Linux -DataCollectionEndpointId $null
+
+Write-Host "Creating DCR Association..."
+$vmParams = @{
+    Name = $vmName
+    ResourceGroupName = $resourceGroupName
+}
+$vm = Get-AzVM @vmParams
+$dcrId = $dcr.Id
+$associationName = "mate-dcr-association"
+New-AzDataCollectionRuleAssociation -TargetResourceId $vm.Id -DataCollectionRuleId $dcrId -Name $associationName
